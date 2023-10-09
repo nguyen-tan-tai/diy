@@ -1,4 +1,5 @@
 #include "Arduino.h"
+#include <SoftwareSerial.h>
 #include "DFRobotDFPlayerMini.h"
 #include "RTClib.h"
 RTC_DS3231 rtc;
@@ -16,8 +17,7 @@ RTC_DS3231 rtc;
 FastLED_NeoPixel<NUM_LEDS, DATA_PIN, NEO_GRB> strip;      // <- FastLED NeoPixel version
 #define NEO_OFF strip.Color(0, 0, 0)
 
-#include <SoftwareSerial.h>
-SoftwareSerial softSerial(11, 10);
+SoftwareSerial softSerial(10, 11);
 DFRobotDFPlayerMini mp3;
 
 int vol = 10;
@@ -36,6 +36,20 @@ const uint32_t COLORS[7] = {
 void setup() {
   Serial.begin(9600);
   pinMode(LED_BUILTIN, OUTPUT);
+
+  softSerial.begin(9600);
+  if (!mp3.begin(softSerial, true, true)) {
+    Serial.println(F("Unable to begin:"));
+    Serial.println(F("1.Please recheck the connection!"));
+    Serial.println(F("2.Please insert the SD card!"));
+    while (true) {}
+  }
+  Serial.println(F("DFPlayer Mini online."));
+  mp3.setTimeOut(500); //Set serial communictaion time out 500ms
+  mp3.volume(vol);
+  mp3.playMp3Folder(1);
+  mp3.volume(20);
+  mp3.playMp3Folder(2);
 
   // DS3231
   if (!rtc.begin()) {
@@ -58,24 +72,13 @@ void setup() {
 
   // NEO
   strip.begin();
-  set_brightness();
-
-  //DFPlayer
-  softSerial.begin(9600);
-  if (!mp3.begin(softSerial, /*isACK = */true, /*doReset = */true)) {  //Use serial to communicate with mp3.
-    Serial.println(F("Unable to begin:"));
-    Serial.println(F("1.Please recheck the connection!"));
-    Serial.println(F("2.Please insert the SD card!"));
-  } else {
-    Serial.println(F("DFPlayer Mini online."));
-    set_volume();
-    mp3.playMp3Folder(1);
-  }
+  strip.setBrightness(brightness);
 }
 
 void loop() {
   if (Serial.available() > 0) {
     String command = Serial.readString();
+    Serial.println(command);
     command.trim();
     if (command.startsWith("SET_TIME")) {
       //SET_TIME 2023-09-23T17:58:02
@@ -131,79 +134,14 @@ void set_volume() {
   if (newVal < 2) {
     newVal = 0;
   }
-  vol = newVal;
-  if (mp3.available()) {
-    Serial.print("volume ");
-    Serial.print(vol);
-    Serial.print("->");
-    Serial.println(newVal);
-    mp3.volume(vol);
-  } else {
-    Serial.println("Mp3 is not avaiable");
-    printDetail(mp3.readType(), mp3.read());
-  }
+  Serial.print("volume ");
+  Serial.print(vol);
+  Serial.print("->");
+  Serial.println(newVal);
+  vol = (uint8_t) newVal;
+  uint8_t uint8tVol = (uint8_t) vol;
+  mp3.volume(vol);
   delay(500);
-}
-
-void printDetail(uint8_t type, int value) {
-  switch (type) {
-    case TimeOut:
-      Serial.println(F("Time Out!"));
-      break;
-    case WrongStack:
-      Serial.println(F("Stack Wrong!"));
-      break;
-    case DFPlayerCardInserted:
-      Serial.println(F("Card Inserted!"));
-      break;
-    case DFPlayerCardRemoved:
-      Serial.println(F("Card Removed!"));
-      break;
-    case DFPlayerCardOnline:
-      Serial.println(F("Card Online!"));
-      break;
-    case DFPlayerUSBInserted:
-      Serial.println("USB Inserted!");
-      break;
-    case DFPlayerUSBRemoved:
-      Serial.println("USB Removed!");
-      break;
-    case DFPlayerPlayFinished:
-      Serial.print(F("Number:"));
-      Serial.print(value);
-      Serial.println(F(" Play Finished!"));
-      break;
-    case DFPlayerError:
-      Serial.print(F("DFPlayerError:"));
-      switch (value) {
-        case Busy:
-          Serial.println(F("Card not found"));
-          break;
-        case Sleeping:
-          Serial.println(F("Sleeping"));
-          break;
-        case SerialWrongStack:
-          Serial.println(F("Get Wrong Stack"));
-          break;
-        case CheckSumNotMatch:
-          Serial.println(F("Check Sum Not Match"));
-          break;
-        case FileIndexOut:
-          Serial.println(F("File Index Out of Bound"));
-          break;
-        case FileMismatch:
-          Serial.println(F("Cannot Find File"));
-          break;
-        case Advertise:
-          Serial.println(F("In Advertise"));
-          break;
-        default:
-          break;
-      }
-      break;
-    default:
-      break;
-  }
 }
 
 void set_brightness() {
@@ -211,7 +149,7 @@ void set_brightness() {
   if (abs(brightness - newVal) < 10) {
     return;
   }
-  if (newVal < 10) {
+  if (newVal < 3) {
     newVal = 0;
   }
   Serial.print("brightness ");
