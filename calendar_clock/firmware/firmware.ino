@@ -1,3 +1,4 @@
+#include "alvn.h"
 #include "OneWire.h"
 #include "DallasTemperature.h"
 // Data wire is plugged into port 2 on the Arduino
@@ -8,7 +9,6 @@ OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&oneWire);
 
 #include <Shifty.h>
-#include "vn_lunar.h"
 #include "RTClib.h"
 RTC_DS3231 rtc;
 #include <FastLED_NeoPixel.h>
@@ -113,10 +113,10 @@ void display_calendar() {
   byte gm1 = month / 10;
   byte gm2 = month  % 10;
 
-  vn_lunar solar;
-  solar.convertSolar2Lunar(day, month, now.year());
-  int lunar_dd = solar.get_lunar_dd();
-  int lunar_mm = solar.get_lunar_mm();
+  GregorianDate gdate = GregorianDate(now.year(), month, day);
+  LunarDate ldate = gdate.toLunarDate();
+  int lunar_dd = ldate.d;
+  int lunar_mm = ldate.m;
   Serial.println(day);
   Serial.println(month);
   Serial.println(now.year());
