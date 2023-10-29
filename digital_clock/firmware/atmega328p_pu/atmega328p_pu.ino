@@ -23,22 +23,12 @@ DFRobotDFPlayerMini mp3;
 int vol = 10;
 int brightness = 100;
 
-const uint32_t COLORS[7] = {
-  strip.Color(255, 0, 0),
-  strip.Color(255, 127, 0),
-  strip.Color(255, 255, 0),
-  strip.Color(0, 255, 0),
-  strip.Color(0, 0, 255),
-  strip.Color(75, 0, 130),
-  strip.Color(148, 0, 211)
-};
-
 void setup() {
   Serial.begin(9600);
   pinMode(LED_BUILTIN, OUTPUT);
 
   softSerial.begin(9600);
-  if (!mp3.begin(softSerial, true, true)) {
+  if (!mp3.begin(softSerial, false, false)) {
     Serial.println(F("Unable to begin:"));
     Serial.println(F("1.Please recheck the connection!"));
     Serial.println(F("2.Please insert the SD card!"));
@@ -108,6 +98,12 @@ void loop() {
       Serial.print(":");
       Serial.print(s < 10 ? "0" : "");
       Serial.println(s);
+    } else if (command.startsWith("DANCE")) {
+      String s = command.substring(5, command.length());
+      s.trim();
+      int seconds = s.toInt();
+      Serial.println("Dancing for " + String(seconds) + " seconds");
+      dance(seconds);
     }
   }
   if (digitalRead(QUICK_ADJ_PIN) == LOW) {
@@ -122,7 +118,7 @@ void loop() {
 void quick_adjust() {
   Serial.println("adjust");
   DateTime now = rtc.now();
-  rtc.adjust(DateTime(now.year(), now.month(), now.day(), 8, 15, 0));
+  rtc.adjust(DateTime(now.year(), now.month(), now.day(), 8, 15, 1));
   delay(500);
 }
 
@@ -171,48 +167,79 @@ void fire_alarm() {
   }
   if (hour == 7 && minute == 50 && second == 0) {
     mp3.playMp3Folder(750);
-    rainbow(3, 5);
+    dance(10);
   } else if (hour == 7 && minute == 58 && second == 0) {
     mp3.playMp3Folder(758);
   } else if (hour == 8 && minute == 0 && second == 0) {
     mp3.playMp3Folder(800);
-    rainbow(3, 5);
+    dance(10);
   } else if (hour == 9 && minute == 0 && second == 0) {
     mp3.playMp3Folder(900);
-    rainbow(3, 5);
+    dance(10);
   } else if (hour == 10 && minute == 0 && second == 0) {
     mp3.playMp3Folder(1000);
-    rainbow(3, 5);
+    dance(10);
   } else if (hour == 11 && minute == 0 && second == 0) {
     mp3.playMp3Folder(1100);
-    rainbow(3, 5);
+    dance(10);
   } else if (hour == 12 && minute == 0 && second == 0) {
     mp3.playMp3Folder(1200);
-    rainbow(3, 5);
+    dance(10);
   } else if (hour == 13 && minute == 28 && second == 0) {
     mp3.playMp3Folder(1328);
   } else if (hour == 13 && minute == 30 && second == 0) {
     mp3.playMp3Folder(1330);
-    rainbow(3, 5);
+    dance(10);
   } else if (hour == 14 && minute == 0 && second == 0) {
     mp3.playMp3Folder(1400);
-    rainbow(3, 5);
+    dance(10);
   } else if (hour == 15 && minute == 0 && second == 0) {
     mp3.playMp3Folder(1500);
-    rainbow(3, 5);
+    dance(10);
   } else if (hour == 16 && minute == 0 && second == 0) {
     mp3.playMp3Folder(1600);
-    rainbow(3, 5);
+    dance(10);
   } else if (hour == 17 && minute == 0 && second == 0) {
     mp3.playMp3Folder(1700);
-    rainbow(3, 5);
+    dance(10);
   } else if (hour == 17 && minute == 30 && second == 0) {
     mp3.playMp3Folder(1730);
-    rainbow(3, 5);
+    dance(10);
   } else if (hour == 18 && minute == 0 && second == 0) {
     mp3.playMp3Folder(1800);
-    rainbow(3, 5);
+    dance(10);
   }
+}
+
+long stop_dance_millis = 0;
+
+void dance(int seconds) {
+  stop_dance_millis = millis() + seconds * 1000;
+}
+
+const uint32_t COLORS[7] = {
+  strip.Color(255, 0, 0),
+  strip.Color(255, 127, 0),
+  strip.Color(255, 255, 0),
+  strip.Color(0, 255, 0),
+  strip.Color(0, 0, 255),
+  strip.Color(75, 0, 130),
+  strip.Color(148, 0, 211)
+};
+
+byte current_color = 0;
+long last_change_color = 0;
+
+uint32_t getColor(int dayOfTheWeek) {
+  long current_millis = millis();
+  if (current_millis < stop_dance_millis) {
+    if (current_millis - last_change_color >= 250) {
+      last_change_color = current_millis;
+      current_color = current_color >= 6 ? 0 : current_color + 1;
+    }
+    return COLORS[current_color];
+  }
+  return COLORS[dayOfTheWeek];
 }
 
 void display_clock() {
@@ -220,7 +247,7 @@ void display_clock() {
   byte hour = now.hour();
   byte minute = now.minute();
   byte second = now.second();
-  uint32_t color = COLORS[now.dayOfTheWeek()];
+  uint32_t color = getColor(now.dayOfTheWeek());
   byte h0 = hour / 10;
   byte h1 = hour % 10;
   byte m0 = minute / 10;
