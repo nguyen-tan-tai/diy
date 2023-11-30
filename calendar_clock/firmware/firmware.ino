@@ -1,20 +1,30 @@
 #include "alvn.h"
 #include "OneWire.h"
 #include "DallasTemperature.h"
-// Data wire is plugged into port 2 on the Arduino
+#include <Shifty.h>
+#include "RTClib.h"
+#include <FastLED_NeoPixel.h>
+
+// Pin definition
 #define ONE_WIRE_BUS 2
+#define NEO_PIXEL_PIN 9
+#define SHIFT_DATA 5
+#define SHIFT_CLOCK 7
+#define SHIFT_LATCH 6
+#define MODE_PIN 8
+#define ADJUST_UP 10
+#define ADJUST_DOWN 11
+
+
 // Setup a oneWire instance to communicate with any OneWire devices (not just Maxim/Dallas temperature ICs)
 OneWire oneWire(ONE_WIRE_BUS);
 // Pass our oneWire reference to Dallas Temperature.
 DallasTemperature sensors(&oneWire);
 
-#include <Shifty.h>
-#include "RTClib.h"
 RTC_DS3231 rtc;
-#include <FastLED_NeoPixel.h>
-#define NUM_LEDS 30
-#define DATA_PIN 9
-FastLED_NeoPixel<NUM_LEDS, DATA_PIN, NEO_GRB> strip;
+
+#define NUM_LEDS 30 // 4 seven-segment digits plus two point
+FastLED_NeoPixel<30, NEO_PIXEL_PIN, NEO_GRB> strip;
 #define NEO_OFF strip.Color(0, 0, 0)
 const uint32_t COLORS[7] = {
   strip.Color(255, 0, 0),
@@ -27,11 +37,11 @@ const uint32_t COLORS[7] = {
 };
 int brightness = 100;
 Shifty calendar;
-const int BIT_CNT = 11 * 8;
+#define BIT_CNT = 88 // 11 seven-segment digits
 
 void setup() {
   calendar.setBitCount(BIT_CNT);
-  calendar.setPins(5, 7, 6);
+  calendar.setPins(SHIFT_DATA, SHIFT_CLOCK, SHIFT_LATCH);
   off();
 
   Serial.begin(9600);
@@ -49,7 +59,7 @@ void setup() {
   Serial.println("RTC connected");
   if (rtc.lostPower()) {
     Serial.println("RTC lost power. Reset to the date this clock was made");
-    rtc.adjust(DateTime(2023, 7, 4, 0, 0 , 0));
+    rtc.adjust(DateTime(2023, 7, 4, 0, 0, 0));
   }
   rtc.disable32K();
 
@@ -57,7 +67,26 @@ void setup() {
   strip.setBrightness(brightness);
 }
 
+enum class RUN_MODE { CLOCK, ADJUST_YEAR, ADJUST_MONTH, ADJUST_DAY, ADJUST_HOUR, ADJUST_MINUTE, ADJUST_SECOND};
+
+RUN_MODE mode = RUN_MODE::CLOCK;
+
 void loop() {
+  do_serial_command();
+  if (digitalRead(MODE_PIN)) {
+    mode
+  }
+
+  if (mode == RUN_MODE::CLOCK) {
+    display_clock();
+  }
+}
+
+void adjust_clock() {
+
+}
+
+void do_serial_command() {
   if (Serial.available() > 0) {
     String command = Serial.readString();
     Serial.println(command);
@@ -92,13 +121,16 @@ void loop() {
       Serial.println(s);
     }
   }
-  display_clock();
-  display_calendar();
+}
+
+void display_clock() {
+  display_time()
+  display_date();
 }
 
 byte current_minute = -1;
 
-void display_calendar() {
+void display_date() {
   DateTime now = rtc.now();
   byte minute = now.minute();
   if (current_minute == minute) {
@@ -144,7 +176,7 @@ void display_calendar() {
   d(gd1, gd2, gm1, gm2, ld1, ld2, lm1, lm2, t1, t2, w);
 }
 
-void display_clock() {
+void display_time() {
   DateTime now = rtc.now();
   byte hour = now.hour();
   byte minute = now.minute();
