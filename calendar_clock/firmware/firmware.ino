@@ -12,9 +12,8 @@
 #define SHIFT_CLOCK 7
 #define SHIFT_LATCH 6
 #define MODE_PIN 8
-#define ADJUST_UP 10
-#define ADJUST_DOWN 11
-
+#define ADJUST_INCREASE 10
+#define ADJUST_DECREASE 12
 
 // Setup a oneWire instance to communicate with any OneWire devices (not just Maxim/Dallas temperature ICs)
 OneWire oneWire(ONE_WIRE_BUS);
@@ -37,13 +36,9 @@ const uint32_t COLORS[7] = {
 };
 int brightness = 100;
 Shifty calendar;
-#define BIT_CNT = 88 // 11 seven-segment digits
+#define BIT_CNT 88 // 11 seven-segment digits
 
 void setup() {
-  calendar.setBitCount(BIT_CNT);
-  calendar.setPins(SHIFT_DATA, SHIFT_CLOCK, SHIFT_LATCH);
-  off();
-
   Serial.begin(9600);
   if (!rtc.begin()) {
     Serial.println("Couldn't find RTC!");
@@ -63,63 +58,77 @@ void setup() {
   }
   rtc.disable32K();
 
+  // Neopixel
   strip.begin();
   strip.setBrightness(brightness);
+
+  // 74HC595
+  calendar.setBitCount(BIT_CNT);
+  calendar.setPins(SHIFT_DATA, SHIFT_CLOCK, SHIFT_LATCH);
 }
 
-enum class RUN_MODE { CLOCK, ADJUST_YEAR, ADJUST_MONTH, ADJUST_DAY, ADJUST_HOUR, ADJUST_MINUTE, ADJUST_SECOND};
+#define MODE_NORMAL 1
+#define MODE_ADJ_YEAR 2
+#define MODE_ADJ_MONTH 3
+#define MODE_ADJ_DAY 4
+#define MODE_ADJ_HOUR 5
+#define MODE_ADJ_MINUTE 6
 
-RUN_MODE mode = RUN_MODE::CLOCK;
+byte mode = MODE_NORMAL;
 
 void loop() {
   do_serial_command();
-  if (digitalRead(MODE_PIN)) {
-    mode
+  if (digitalRead(MODE_PIN) == HIGH) {
+    mode = (mode == MODE_ADJ_MINUTE) ? 1 : (mode + 1);
+    delay(250);
   }
-
-  if (mode == RUN_MODE::CLOCK) {
-    display_clock();
+  if (mode == MODE_NORMAL) {
+    display_calendar();
+    return;
   }
+  display_adjust();
 }
 
-void adjust_clock() {
-
-}
-
-void do_serial_command() {
-  if (Serial.available() > 0) {
-    String command = Serial.readString();
-    Serial.println(command);
-    command.trim();
-    if (command.startsWith("SET_TIME")) {
-      //SET_TIME 2023-09-23T17:58:02
-      String isoTime = command.substring(8, command.length());
-      isoTime.trim();
-      int y = isoTime.substring(0, 4).toInt();
-      int mo = isoTime.substring(5, 7).toInt();
-      int d = isoTime.substring(8, 10).toInt();
-      int h = isoTime.substring(11, 13).toInt();
-      int mi = isoTime.substring(14, 16).toInt();
-      int s = isoTime.substring(17, 19).toInt();
-      rtc.adjust(DateTime(y, mo, d, h, mi, s));
-      Serial.print("Adjust time = ");
-      Serial.print(y);
-      Serial.print("-");
-      Serial.print(mo < 10 ? "0" : "");
-      Serial.print(mo);
-      Serial.print("-");
-      Serial.print(d < 10 ? "0" : "");
-      Serial.print(d);
-      Serial.print("T");
-      Serial.print(h < 10 ? "0" : "");
-      Serial.print(h);
-      Serial.print(":");
-      Serial.print(mi < 10 ? "0" : "");
-      Serial.print(mi);
-      Serial.print(":");
-      Serial.print(s < 10 ? "0" : "");
-      Serial.println(s);
+void display_adjust() {
+  boolean inc = digitalRead(ADJUST_INCREASE);
+  boolean dec = digitalRead(ADJUST_DECREASE);
+  DateTime now = rtc.now();
+  byte year = now.year();
+  byte month = now.month();
+  byte day = now.day();
+  byte hour = now.hour();
+  byte minute = now.minute();
+  byte second = now.second();
+  if (inc || dec) {
+    byte value = (inc ? 1 : 0) + (dec ? -1 : 0);
+    if (mode == MODE_ADJ_YEAR) {
+      rtc.adjust(DateTime(year + value, month, day, hour, minute, second));
+    } else if (mode == MODE_ADJ_MONTH) {
+      rtc.adjust(DateTime(year, month + value, day, hour, minute, second));
+    } else if (mode == MODE_ADJ_DAY) {
+      rtc.adjust(DateTime(year, month, day + value, hour, minute, second));
+    } else if (mode == MODE_ADJ_HOUR) {
+      rtc.adjust(DateTime(year, month, day, hour + value, minute, second));
+    } else if (mode == MODE_ADJ_MINUTE) {
+      rtc.adjust(DateTime(year, month, day, hour, minute + value, 0));
     }
+    delay(250);
+  }
+  if (mode == MODE_ADJ_YEAR) {
+    display_clock(0, -1, -1, -1);
+    display_date(year / 1000, year / 100, year / 10, y % 10, -1, -1, -1, -1, -1, -1, -1);
+  } else if (mode == MODE_ADJ_MONTH) {
+    display_clock(0, -1, -1, -1);
+    display_date(-1, -1, month / 10, m % 10, -1, -1, -1, -1, -1, -1, -1);
+  } else if (mode == MODE_ADJ_DAY) {
+    display_clock(0, -1, -1, -1);
+    display_date(day / 10, day % 10, -1, -1, -1, -1, -1, -1, -1, -1, -1);
+  } else if (mode == MODE_ADJ_HOUR) {
+    display_clock(0, -1, -1, -1);
+    display_date(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1);
+  } else if (mode == MODE_ADJ_MINUTE) {
+    display_clock(0, -1, -1, -1);
+    display_date(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1);
   }
 }
 
@@ -133,7 +142,8 @@ void display_calendar() {
   byte hour = now.hour();
   byte minute = now.minute();
   byte second = now.second();
-  display_clock(hour, minute, second);
+  byte dayofweek = now.dayOfTheWeek();
+  display_clock(dayofweek, hour, minute, second);
   if (current_minute == minute) {
     return;
   }
@@ -155,13 +165,11 @@ void display_calendar() {
   int int_temp = (int)(temperature);
   byte t1 = int_temp / 10;
   byte t2 = int_temp % 10;
-  byte w = now.dayOfTheWeek() + 1;
-  w = (w == 1 ? 8 : w);
-  display_date(gd1, gd2, gm1, gm2, ld1, ld2, lm1, lm2, t1, t2, w);
+  display_date(gd1, gd2, gm1, gm2, ld1, ld2, lm1, lm2, t1, t2, (dayofweek == 0 ? 8 : dayofweek + 1));
 }
 
-void display_clock(byte h, byte m, byte s) {
-  uint32_t color = COLORS[now.dayOfTheWeek()];
+void display_clock(byte w, byte h, byte m, byte s) {
+  uint32_t color = COLORS[w];
   byte h0 = h / 10;
   byte h1 = h % 10;
   byte m0 = m / 10;
@@ -180,110 +188,6 @@ void display_clock(byte h, byte m, byte s) {
   strip.show();
 }
 
-void write_neo_digit(uint32_t color, byte digit, byte start_index) {
-  switch (digit) {
-    case 0:
-      strip.setPixelColor(start_index + 0, NEO_OFF);
-      strip.setPixelColor(start_index + 1, color);
-      strip.setPixelColor(start_index + 2, color);
-      strip.setPixelColor(start_index + 3, color);
-      strip.setPixelColor(start_index + 4, color);
-      strip.setPixelColor(start_index + 5, color);
-      strip.setPixelColor(start_index + 6, color);
-      break;
-    case 1:
-      strip.setPixelColor(start_index + 0, NEO_OFF);
-      strip.setPixelColor(start_index + 1, NEO_OFF);
-      strip.setPixelColor(start_index + 2, NEO_OFF);
-      strip.setPixelColor(start_index + 3, color);
-      strip.setPixelColor(start_index + 4, color);
-      strip.setPixelColor(start_index + 5, NEO_OFF);
-      strip.setPixelColor(start_index + 6, NEO_OFF);
-      break;
-    case 2:
-      strip.setPixelColor(start_index + 0, color);
-      strip.setPixelColor(start_index + 1, NEO_OFF);
-      strip.setPixelColor(start_index + 2, color);
-      strip.setPixelColor(start_index + 3, color);
-      strip.setPixelColor(start_index + 4, NEO_OFF);
-      strip.setPixelColor(start_index + 5, color);
-      strip.setPixelColor(start_index + 6, color);
-      break;
-    case 3:
-      strip.setPixelColor(start_index + 0, color);
-      strip.setPixelColor(start_index + 1, NEO_OFF);
-      strip.setPixelColor(start_index + 2, color);
-      strip.setPixelColor(start_index + 3, color);
-      strip.setPixelColor(start_index + 4, color);
-      strip.setPixelColor(start_index + 5, color);
-      strip.setPixelColor(start_index + 6, NEO_OFF);
-      break;
-    case 4:
-      strip.setPixelColor(start_index + 0, color);
-      strip.setPixelColor(start_index + 1, color);
-      strip.setPixelColor(start_index + 2, NEO_OFF);
-      strip.setPixelColor(start_index + 3, color);
-      strip.setPixelColor(start_index + 4, color);
-      strip.setPixelColor(start_index + 5, NEO_OFF);
-      strip.setPixelColor(start_index + 6, NEO_OFF);
-      break;
-    case 5:
-      strip.setPixelColor(start_index + 0, color);
-      strip.setPixelColor(start_index + 1, color);
-      strip.setPixelColor(start_index + 2, color);
-      strip.setPixelColor(start_index + 3, NEO_OFF);
-      strip.setPixelColor(start_index + 4, color);
-      strip.setPixelColor(start_index + 5, color);
-      strip.setPixelColor(start_index + 6, NEO_OFF);
-      break;
-    case 6:
-      strip.setPixelColor(start_index + 0, color);
-      strip.setPixelColor(start_index + 1, color);
-      strip.setPixelColor(start_index + 2, color);
-      strip.setPixelColor(start_index + 3, NEO_OFF);
-      strip.setPixelColor(start_index + 4, color);
-      strip.setPixelColor(start_index + 5, color);
-      strip.setPixelColor(start_index + 6, color);
-      break;
-    case 7:
-      strip.setPixelColor(start_index + 0, NEO_OFF);
-      strip.setPixelColor(start_index + 1, NEO_OFF);
-      strip.setPixelColor(start_index + 2, color);
-      strip.setPixelColor(start_index + 3, color);
-      strip.setPixelColor(start_index + 4, color);
-      strip.setPixelColor(start_index + 5, NEO_OFF);
-      strip.setPixelColor(start_index + 6, NEO_OFF);
-      break;
-    case 8:
-      strip.setPixelColor(start_index + 0, color);
-      strip.setPixelColor(start_index + 1, color);
-      strip.setPixelColor(start_index + 2, color);
-      strip.setPixelColor(start_index + 3, color);
-      strip.setPixelColor(start_index + 4, color);
-      strip.setPixelColor(start_index + 5, color);
-      strip.setPixelColor(start_index + 6, color);
-      break;
-    case 9:
-      strip.setPixelColor(start_index + 0, color);
-      strip.setPixelColor(start_index + 1, color);
-      strip.setPixelColor(start_index + 2, color);
-      strip.setPixelColor(start_index + 3, color);
-      strip.setPixelColor(start_index + 4, color);
-      strip.setPixelColor(start_index + 5, color);
-      strip.setPixelColor(start_index + 6, NEO_OFF);
-      break;
-    default:
-      strip.setPixelColor(start_index + 0, NEO_OFF);
-      strip.setPixelColor(start_index + 1, NEO_OFF);
-      strip.setPixelColor(start_index + 2, NEO_OFF);
-      strip.setPixelColor(start_index + 3, NEO_OFF);
-      strip.setPixelColor(start_index + 4, NEO_OFF);
-      strip.setPixelColor(start_index + 5, NEO_OFF);
-      strip.setPixelColor(start_index + 6, NEO_OFF);
-      break;
-  }
-}
-
 void display_date(byte gd1, byte gd2, byte gm1, byte gm2, byte ld1, byte ld2, byte lm1, byte lm2, byte t1, byte t2, byte wd) {
   calendar.batchWriteBegin();
   write_74595_digit_bit(0, wd);
@@ -298,108 +202,4 @@ void display_date(byte gd1, byte gd2, byte gm1, byte gm2, byte ld1, byte ld2, by
   write_74595_digit_bit(9, gd2);
   write_74595_digit_bit(10, gd1);
   calendar.batchWriteEnd();
-}
-
-void write_74595_digit_bit(byte p, byte d) {
-  byte i = p * 8;
-  if (d == 0) {
-    calendar.writeBit(i + 0, LOW);
-    calendar.writeBit(i + 1, LOW);
-    calendar.writeBit(i + 2, LOW);
-    calendar.writeBit(i + 3, HIGH);
-    calendar.writeBit(i + 4, LOW);
-    calendar.writeBit(i + 5, HIGH);
-    calendar.writeBit(i + 6, LOW);
-    calendar.writeBit(i + 7, LOW);
-  } else if (d == 1) {
-    calendar.writeBit(i + 0, LOW);
-    calendar.writeBit(i + 1, HIGH);
-    calendar.writeBit(i + 2, HIGH);
-    calendar.writeBit(i + 3, HIGH);
-    calendar.writeBit(i + 4, HIGH);
-    calendar.writeBit(i + 5, HIGH);
-    calendar.writeBit(i + 6, HIGH);
-    calendar.writeBit(i + 7, LOW);
-  } else if (d == 2) {
-    calendar.writeBit(i + 0, HIGH);
-    calendar.writeBit(i + 1, LOW);
-    calendar.writeBit(i + 2, LOW);
-    calendar.writeBit(i + 3, LOW);
-    calendar.writeBit(i + 4, HIGH);
-    calendar.writeBit(i + 5, HIGH);
-    calendar.writeBit(i + 6, LOW);
-    calendar.writeBit(i + 7, LOW);
-  } else if (d == 3) {
-    calendar.writeBit(i + 0, LOW);
-    calendar.writeBit(i + 1, LOW);
-    calendar.writeBit(i + 2, HIGH);
-    calendar.writeBit(i + 3, LOW);
-    calendar.writeBit(i + 4, HIGH);
-    calendar.writeBit(i + 5, HIGH);
-    calendar.writeBit(i + 6, LOW);
-    calendar.writeBit(i + 7, LOW);
-  } else if (d == 4) {
-    calendar.writeBit(i + 0, LOW);
-    calendar.writeBit(i + 1, HIGH);
-    calendar.writeBit(i + 2, HIGH);
-    calendar.writeBit(i + 3, LOW);
-    calendar.writeBit(i + 4, LOW);
-    calendar.writeBit(i + 5, HIGH);
-    calendar.writeBit(i + 6, HIGH);
-    calendar.writeBit(i + 7, LOW);
-  } else if (d == 5) {
-    calendar.writeBit(i + 0, LOW);
-    calendar.writeBit(i + 1, LOW);
-    calendar.writeBit(i + 2, HIGH);
-    calendar.writeBit(i + 3, LOW);
-    calendar.writeBit(i + 4, LOW);
-    calendar.writeBit(i + 5, HIGH);
-    calendar.writeBit(i + 6, LOW);
-    calendar.writeBit(i + 7, HIGH);
-  } else if (d == 6) {
-    calendar.writeBit(i + 0, LOW);
-    calendar.writeBit(i + 1, LOW);
-    calendar.writeBit(i + 2, LOW);
-    calendar.writeBit(i + 3, LOW);
-    calendar.writeBit(i + 4, LOW);
-    calendar.writeBit(i + 5, HIGH);
-    calendar.writeBit(i + 6, LOW);
-    calendar.writeBit(i + 7, HIGH);
-  } else if (d == 7) {
-    calendar.writeBit(i + 0, LOW);
-    calendar.writeBit(i + 1, HIGH);
-    calendar.writeBit(i + 2, HIGH);
-    calendar.writeBit(i + 3, HIGH);
-    calendar.writeBit(i + 4, HIGH);
-    calendar.writeBit(i + 5, HIGH);
-    calendar.writeBit(i + 6, LOW);
-    calendar.writeBit(i + 7, LOW);
-  } else if (d == 8) {
-    calendar.writeBit(i + 0, LOW);
-    calendar.writeBit(i + 1, LOW);
-    calendar.writeBit(i + 2, LOW);
-    calendar.writeBit(i + 3, LOW);
-    calendar.writeBit(i + 4, LOW);
-    calendar.writeBit(i + 5, HIGH);
-    calendar.writeBit(i + 6, LOW);
-    calendar.writeBit(i + 7, LOW);
-  } else if (d == 9) {
-    calendar.writeBit(i + 0, LOW);
-    calendar.writeBit(i + 1, LOW);
-    calendar.writeBit(i + 2, HIGH);
-    calendar.writeBit(i + 3, LOW);
-    calendar.writeBit(i + 4, LOW);
-    calendar.writeBit(i + 5, HIGH);
-    calendar.writeBit(i + 6, LOW);
-    calendar.writeBit(i + 7, LOW);
-  } else {
-    calendar.writeBit(i + 0, LOW);
-    calendar.writeBit(i + 1, LOW);
-    calendar.writeBit(i + 2, LOW);
-    calendar.writeBit(i + 3, LOW);
-    calendar.writeBit(i + 4, LOW);
-    calendar.writeBit(i + 5, LOW);
-    calendar.writeBit(i + 6, LOW);
-    calendar.writeBit(i + 7, LOW);
-  }
 }
