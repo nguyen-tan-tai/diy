@@ -123,84 +123,64 @@ void do_serial_command() {
   }
 }
 
-void display_clock() {
-  display_time()
-  display_date();
-}
-
 byte current_minute = -1;
 
-void display_date() {
+void display_calendar() {
   DateTime now = rtc.now();
+  byte year = now.year();
+  byte month = now.month();
+  byte day = now.day();
+  byte hour = now.hour();
   byte minute = now.minute();
+  byte second = now.second();
+  display_clock(hour, minute, second);
   if (current_minute == minute) {
     return;
   }
   current_minute = minute;
-  byte day = now.day();
   byte gd1 = day / 10;
   byte gd2 = day  % 10;
-
-  byte month = now.month();
   byte gm1 = month / 10;
   byte gm2 = month  % 10;
-
-  GregorianDate gdate = GregorianDate(now.year(), month, day);
+  GregorianDate gdate = GregorianDate(year, month, day);
   LunarDate ldate = gdate.toLunarDate();
   int lunar_dd = ldate.d;
   int lunar_mm = ldate.m;
-  Serial.println(day);
-  Serial.println(month);
-  Serial.println(now.year());
-  Serial.println(lunar_dd);
-  Serial.println(lunar_mm);
-
   byte ld1 = lunar_dd / 10;
   byte ld2 = lunar_dd  % 10;
   byte lm1 = lunar_mm / 10;
   byte lm2 = lunar_mm  % 10;
-
   sensors.requestTemperatures();
   float temperature = sensors.getTempCByIndex(0);
-  Serial.print("temperature: ");
-  Serial.println(temperature);
   int int_temp = (int)(temperature);
   byte t1 = int_temp / 10;
   byte t2 = int_temp % 10;
-
   byte w = now.dayOfTheWeek() + 1;
-  if (w == 1) {
-    w = 8;
-  }
-
-  d(gd1, gd2, gm1, gm2, ld1, ld2, lm1, lm2, t1, t2, w);
+  w = (w == 1 ? 8 : w);
+  display_date(gd1, gd2, gm1, gm2, ld1, ld2, lm1, lm2, t1, t2, w);
 }
 
-void display_time() {
-  DateTime now = rtc.now();
-  byte hour = now.hour();
-  byte minute = now.minute();
-  byte second = now.second();
+void display_clock(byte h, byte m, byte s) {
   uint32_t color = COLORS[now.dayOfTheWeek()];
-  byte h0 = hour / 10;
-  byte h1 = hour % 10;
-  byte m0 = minute / 10;
-  byte m1 = minute  % 10;
-  display_7_segment(color, h0, 23);
-  display_7_segment(color, h1, 16);
-  if (second % 2 == 0) {
+  byte h0 = h / 10;
+  byte h1 = h % 10;
+  byte m0 = m / 10;
+  byte m1 = m  % 10;
+  write_neo_digit(color, h0, 23);
+  write_neo_digit(color, h1, 16);
+  if (s % 2 == 0) {
     strip.setPixelColor(14, color);
     strip.setPixelColor(15, color);
   } else {
     strip.setPixelColor(14, NEO_OFF);
     strip.setPixelColor(15, NEO_OFF);
   }
-  display_7_segment(color, m0, 7);
-  display_7_segment(color, m1, 0);
+  write_neo_digit(color, m0, 7);
+  write_neo_digit(color, m1, 0);
   strip.show();
 }
 
-void display_7_segment(uint32_t color, byte digit, byte start_index) {
+void write_neo_digit(uint32_t color, byte digit, byte start_index) {
   switch (digit) {
     case 0:
       strip.setPixelColor(start_index + 0, NEO_OFF);
@@ -293,35 +273,34 @@ void display_7_segment(uint32_t color, byte digit, byte start_index) {
       strip.setPixelColor(start_index + 6, NEO_OFF);
       break;
     default:
+      strip.setPixelColor(start_index + 0, NEO_OFF);
+      strip.setPixelColor(start_index + 1, NEO_OFF);
+      strip.setPixelColor(start_index + 2, NEO_OFF);
+      strip.setPixelColor(start_index + 3, NEO_OFF);
+      strip.setPixelColor(start_index + 4, NEO_OFF);
+      strip.setPixelColor(start_index + 5, NEO_OFF);
+      strip.setPixelColor(start_index + 6, NEO_OFF);
       break;
   }
 }
 
-void d(byte gd1, byte gd2, byte gm1, byte gm2, byte ld1, byte ld2, byte lm1, byte lm2, byte t1, byte t2, byte wd) {
+void display_date(byte gd1, byte gd2, byte gm1, byte gm2, byte ld1, byte ld2, byte lm1, byte lm2, byte t1, byte t2, byte wd) {
   calendar.batchWriteBegin();
-  w(0, wd);
-  w(1, t2);
-  w(2, t1);
-  w(3, lm2);
-  w(4, lm1);
-  w(5, ld2);
-  w(6, ld1);
-  w(7, gm2);
-  w(8, gm1);
-  w(9, gd2);
-  w(10, gd1);
+  write_74595_digit_bit(0, wd);
+  write_74595_digit_bit(1, t2);
+  write_74595_digit_bit(2, t1);
+  write_74595_digit_bit(3, lm2);
+  write_74595_digit_bit(4, lm1);
+  write_74595_digit_bit(5, ld2);
+  write_74595_digit_bit(6, ld1);
+  write_74595_digit_bit(7, gm2);
+  write_74595_digit_bit(8, gm1);
+  write_74595_digit_bit(9, gd2);
+  write_74595_digit_bit(10, gd1);
   calendar.batchWriteEnd();
 }
 
-void off() {
-  calendar.batchWriteBegin();
-  for (byte i = 0; i < BIT_CNT; i++) {
-    calendar.writeBit(i, HIGH);
-  }
-  calendar.batchWriteEnd();
-}
-
-void w(byte p, byte d) {
+void write_74595_digit_bit(byte p, byte d) {
   byte i = p * 8;
   if (d == 0) {
     calendar.writeBit(i + 0, LOW);
@@ -411,6 +390,15 @@ void w(byte p, byte d) {
     calendar.writeBit(i + 3, LOW);
     calendar.writeBit(i + 4, LOW);
     calendar.writeBit(i + 5, HIGH);
+    calendar.writeBit(i + 6, LOW);
+    calendar.writeBit(i + 7, LOW);
+  } else {
+    calendar.writeBit(i + 0, LOW);
+    calendar.writeBit(i + 1, LOW);
+    calendar.writeBit(i + 2, LOW);
+    calendar.writeBit(i + 3, LOW);
+    calendar.writeBit(i + 4, LOW);
+    calendar.writeBit(i + 5, LOW);
     calendar.writeBit(i + 6, LOW);
     calendar.writeBit(i + 7, LOW);
   }
