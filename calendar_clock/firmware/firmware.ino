@@ -124,10 +124,10 @@ void display_adjust() {
     display_clock(0, -1, -1, -1);
     display_date(day / 10, day % 10, -1, -1, -1, -1, -1, -1, -1, -1, -1);
   } else if (mode == MODE_ADJ_HOUR) {
-    display_clock(0, -1, -1, -1);
+    display_clock(0, hour, -1, -1);
     display_date(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1);
   } else if (mode == MODE_ADJ_MINUTE) {
-    display_clock(0, -1, -1, -1);
+    display_clock(0, -1, minute, -1);
     display_date(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1);
   }
 }
